@@ -77,6 +77,7 @@ if (!file.exists(archivo_perdida)){
 
 
 
+
 ## Repetir proceso desde GDAL externo. Más demorado
 # system.time(extent_bosques_rgdal <- rgdal::ogrInfo(archivos_bosques[1])) # 5 mins
 # extent_bosques <- extent_bosques_rgdal$extent 
@@ -100,7 +101,7 @@ if (! file.exists(archivo_inicial_0) ){
     print(system.time(
       system(
         paste0(execGDAL, 
-               '--calc="0 + (1*(logical_or(A==3, A==5)))" ',
+               ' --calc="0 + (1*(logical_or(A==3, A==5)))" ',
                 '-A ', root2, '\\', archivo_bosques,
                #'-A C:/temp/Peru_riparios/01_DatosOriginales/Nacional/Bosque_No_Bosque_2020.tif', 
                ' --outfile=', root2, '\\', archivo_inicial_0,
@@ -124,12 +125,9 @@ if (! file.exists(archivo_perdida_0) ){
 } 
 
 
-
 ## Cargar capas raster en R en caso que debamos operar en R los cálculos
 raster_inicial_0 <- raster(archivo_inicial_0)
 raster_perdida_0 <- raster(archivo_perdida_0)
-
-
 
 ## Rios ------
 Ruta_rios <- '../08_SERNANP/hidro_clip_anp.shp'
@@ -152,7 +150,7 @@ if ( ! file.exists(archivo_buffer_30) ){
                            dst_datasource_name = archivo_buffer_30,
                            f = "ESRI Shapefile", dialect = 'sqlite',
                            sql = paste0('select ST_buffer(geometry, 30) as geometry FROM ', 
-                                        basename(tools::file_path_sans_ext(Ruta_rios)) ))
+                                        basename(tools::file_path_sans_ext(Ruta_rios_proj)) ))
   ) # 200
 }
 
@@ -165,7 +163,7 @@ if (!file.exists(archivo_buffer_100)){
                            dst_datasource_name = archivo_buffer_100,
                            f = "ESRI Shapefile", dialect = 'sqlite',
                            sql = paste0('select ST_buffer(geometry, 100) as geometry FROM ', 
-                                        basename(tools::file_path_sans_ext(Ruta_rios)) ))
+                                        basename(tools::file_path_sans_ext(Ruta_rios_proj)) ))
   ) # 237
 }
 
@@ -174,7 +172,7 @@ if (!file.exists(archivo_buffer_100)){
 
 archivo_raster_buffer_30 <- paste0('05_rios-raster/', 'buffer30.tif')
 archivo_raster_buffer_100 <- paste0('05_rios-raster/', 'buffer100.tif')
-
+getwd()
 if (!file.exists(archivo_raster_buffer_30)){
   print(system.time(
     gdalUtilities::gdal_rasterize(src_datasource = archivo_buffer_30, 
@@ -189,7 +187,8 @@ if (!file.exists(archivo_raster_buffer_30)){
 if (!file.exists(archivo_raster_buffer_100)){
   print(system.time(
     gdalUtilities::gdal_rasterize(src_datasource = archivo_buffer_100, 
-                                  dst_filename = archivo_raster_buffer_100, ot = 'Byte',
+                                  dst_filename = archivo_raster_buffer_100, 
+                                  ot = 'Byte',
                                   burn = 1, tr = c(30, 30), init = 0, 
                                   te =  extent_numerico,
                                   co=c("COMPRESS=DEFLATE", "NBITS=1"))
@@ -241,8 +240,8 @@ celdas_buff_100 <- Reduce(f = '*', x = dimensiones_buff_100)
 ## Extraer fechas de perdida de bosque sobre la cual iterar. Dejaremos desde 2000 a 2020
 raster_fechas <- raster(archivo_perdida)
 #fechas_unicas <- unique(raster_fechas) # 400 seg
-system.time(fechas_perdida <- unique(raster_fechas[]))
-fechas_perdida <- sort(na.omit(fechas_perdida))
+# system.time(fechas_perdida <- unique(raster_fechas[]))
+# fechas_perdida <- sort(na.omit(fechas_perdida))
 
 fechas_unicas <- 2000+(0:22)
 
@@ -252,6 +251,7 @@ fechas_unicas <- 2000+(0:22)
 for( f in 1:length(fechas_unicas)){ # f = 19 # }
   
   ## Definir valores en cada paso, como anio y nombres de capas
+  # f = 1
   (anio <- fechas_unicas[f]) ## entre 2000 y 2020
   (anio2 <- fechas_unicas[f]) ## entre 0 y 20
   print(paste(' ---- Capa ', f, ' de ', length(fechas_unicas),
@@ -271,9 +271,9 @@ for( f in 1:length(fechas_unicas)){ # f = 19 # }
       ## Heho con gdal_calc.pys
       print(system.time( 
         system(intern = TRUE,
-          paste0('C:\\"Program Files"\\"QGIS 3.16"\\OSGeo4W.bat py3_env.bat && ',
-                 'py3_env.bat && gdal_calc ',
-                 '--calc="A-(1*(logical_and(B!=0,B<=', anio2, ')))" ',
+
+          paste0(execGDAL,
+                 ' --calc="A-(1*(logical_and(B!=0,B<=', anio2, ')))" ',
                  '-A ', root2, '\\', archivo_inicial_0,' -B ', root2, '\\',archivo_perdida_0, 
                  ' --outfile=', root2, '\\', nombre_raster_bosque,
                  ' --type=Byte --NoDataValue=999 --co="NBITS=1" --co="COMPRESS=DEFLATE" --quiet'
@@ -322,7 +322,7 @@ for( f in 1:length(fechas_unicas)){ # f = 19 # }
                  ' --type=Byte --NoDataValue=999 --co="NBITS=1" --co="COMPRESS=DEFLATE" --quiet'
           ))))
     }
-  }
+  } # 1900
   
   
   # Bosque en buffers 100m -----

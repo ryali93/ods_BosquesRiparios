@@ -1,0 +1,143 @@
+#### 0. Intrucciones
+# Pegar estos comandos en la consola de GRASS (ventana de Python) o en la pestana consola de la ventana de administracion de capas 
+# En la consola negra de Python no se indica el tiempo de procesamiento, en la consola blanca sí
+# Cambiar las rutas relativas en donde se encuentran los archivos. Se puede usar el flag o parametro --overwrite para reemplazar archivos existentes
+
+
+#### 1. Importar datos y preparar columnas
+
+## Importar capa de rios. Subir la recortada y proyectada para ahorrar tiempo
+v.import input=C:\temp\Peru_riparios\08_SERNANP\hidro_clip_anp_proj.shp layer=hidro_clip_anp_proj output=hidrografia
+
+## Importar capa de AP
+v.import input=C:\temp\Peru_riparios\08_SERNANP\anp.shp layer=anp output=anp
+
+# Definir region de trabajo con el extent de la capa ingresada
+g.region vect=anp
+
+## Importar capa de bosques. Toma cerca de 15 mins por capa. Puede que la primera capa ya esté ingresada
+v.import input=C:\temp\Peru_riparios\08_SERNANP\deforestacion.shp layer=deforestacion output=deforestacion
+v.import input=C:\temp\Peru_riparios\01_DatosOriginales\Nacional\Bosque_No_Bosque_2020_Vector.shp layer=Bosque_No_Bosque_2020_Vector output=bosque
+# (Fri Sep  9 04:47:03 2022) Command finished (297 min 4 sec)                     
+
+
+## Listar archivos cargados
+g.list type=vect
+# Deberían ser: anp, bosque, deforestacion, hidrografia
+
+## Borrar campos de capas
+v.db.dropcolumn map=bosque@PERMANENT columns=OBJECTID_1,OBJECTID,Id,Shape_Leng,Shape_Le_1,Shape_Area
+v.db.dropcolumn map=deforestacion@PERMANENT columns=anp_codi,md_fuente,zi_codi,md_causa,md_fecimg,md_sup,md_exa,md_conf,md_bosque,md_zonif,md_obs,globalid,created_us,created_da,last_edite,last_edi_1,shape_Leng,shape_Area
+v.db.dropcolumn map=hidrografia@PERMANENT columns=rasgo_secu,longitud,nombre,cuenca,caract,obs,provincia,dpto,distrito,cod_facc,cod_ign,longkm,g_docreg,g_fecreg,g_fuente,g_cut,created_us,created_da,last_edite,last_edi_1,shape_Leng
+v.db.dropcolumn map=anp@PERMANENT columns=shape_Leng,shape_Area
+
+
+## Exportar, crear ID en capa de ríos y borrar campos
+# Crear ID consecutivo
+
+v.db.addcolumn map=hidrografia@PERMANENT columns="idriv integer"
+v.db.update map=hidrografia@PERMANENT column=idriv query_column=cat
+
+# Exportar capa vector de cuencas y rios con IDs, para luego agregegarle columnas con indicadores. (OPCIONAL)
+v.out.ogr input=hidrografia@PERMANENT output="C:\temp\Peru_riparios\08_SERNANP\hidrografia_id.shp" format=ESRI_Shapefile
+
+
+## Cortar capa de hidrología a las ANP
+v.overlay ainput=hidrografia@PERMANENT binput=anp@PERMANENT operator=and output=rios
+
+
+## Buffers de 30m y 100m. Esto toma 30mins approx en cada capa
+v.buffer -t input=rios@PERMANENT output=buffer30m distance=30
+v.buffer -t input=rios@PERMANENT output=buffer100m distance=100
+
+## Dissolve buffers y crear campos
+# Crear columna indicando el buffer usado
+v.db.addcolumn map=buffer30m@PERMANENT columns="buf30 integer"
+v.db.update map=buffer30m@PERMANENT column=buf30 value=30
+
+# Crear columna indicando el buffer usado
+v.db.addcolumn map=buffer100m@PERMANENT columns="buf100 integer"
+v.db.update map=buffer100m@PERMANENT column=buf100 value=100
+
+# Crear columna copiando ID para columna con nombre propio
+v.db.addcolumn map=buffer30m@PERMANENT columns="buf30id integer"
+v.db.update map=buffer30m@PERMANENT column=buf30id query_column=a_idriv
+
+# Crear columna copiando ID para columna con nombre propio
+v.db.addcolumn map=buffer100m@PERMANENT columns="buf100id integer"
+v.db.update map=buffer100m@PERMANENT column=buf100id query_column=a_idriv
+
+
+#### 2. Calcular a nivel nacional y de cuencas
+
+# Disolver capas. Esto puede tomar varias (5h) cada proceso. Mejor usar v.buffer sin el parametro -t que dura 30 mins y no 5h usando v.dissolve
+#v.dissolve --overwrite input=buffer30m@PERMANENT column=buf30 output=buffer30mdissolve
+#v.dissolve --overwrite input=buffer100m@PERMANENT column=buf100 output=buffer100mdissolve
+
+v.buffer input=rios@PERMANENT output=buffer30mdissolve distance=30
+v.buffer input=rios@PERMANENT output=buffer100mdissolve distance=100
+*********************************************
+
+# Crear tabla de atributos y crear columnas para el poligono dissolve
+v.db.addtable map=buffer30mdissolve@PERMANENT
+v.db.addtable map=buffer100mdissolve@PERMANENT
+
+# Crear campos nuevamente. El dissolve no presenta tabla 
+v.db.addcolumn map=buffer30mdissolve@PERMANENT columns="buf30d integer"
+v.db.update map=buffer30mdissolve@PERMANENT column=buf30d value=30
+
+v.db.addcolumn map=buffer100mdissolve@PERMANENT columns="bufw100d integer"
+v.db.update map=buffer100mdissolve@PERMANENT column=bufw100d value=100
+
+
+## Intersectar zonas riparias y dejar capa con ambos buffer (30 y 100) más el area de cada cuenca/ANP original
+# Unir capas de buffers. Duran 30mins ambos proceso en total
+v.overlay ainput=buffer30mdissolve@PERMANENT binput=buffer100mdissolve@PERMANENT operator=or output=union30100
+v.overlay ainput=anp@PERMANENT binput=union30100@PERMANENT operator=and output=anpbuf
+
+
+# Calcular area -- util para análisis a escala de cuenca/anp
+v.db.addcolumn map=anpbuf@PERMANENT columns="basm2 double"
+v.to.db map=anpbuf@PERMANENT option=area columns=basm2 --overwrite
+
+
+## Intersección con bosques y calculo de areas. El proceso toma cerca de 5mins
+v.overlay ainput=anpbuf@PERMANENT binput=bosque@PERMANENT operator=and output=anpbufbos
+v.db.addcolumn map=anpbufbos@PERMANENT columns="bosm2 double"
+v.to.db map=anpbufbos@PERMANENT option=area columns=bosm2 --overwrite
+
+v.overlay ainput=anpbufbos@PERMANENT binput=deforestacion@PERMANENT operator=and output=anpbufbosdef
+v.db.addcolumn map=anpbufbosdef@PERMANENT columns="bosdefm2 double"
+v.to.db map=anpbufbosdef@PERMANENT option=area columns=bosdefm2 --overwrite
+
+## Exportar tablas # Toma 5mins cada uno
+v.out.ogr input=anpbufbosdef@PERMANENT output=F:\ods15\riparios\04_calculoANP\anpbufbosdef_output.csv format=CSV
+v.out.ogr input=anpbufbosdef@PERMANENT output=F:\ods15\riparios\04_calculoANP\anpbufbosdef.shp format=ESRI_Shapefile **FALTA**
+
+v.out.ogr input=anpbufbos@PERMANENT output=F:\ods15\riparios\04_calculoANP\anpbufbos.csv format=CSV
+v.out.ogr input=anpbuf@PERMANENT output=F:\ods15\riparios\04_calculoANP\anpbuf.csv format=CSV
+
+*********************************************
+#### 2. Calcular a nivel de ríos
+# Calcular areas de buffers
+v.db.addcolumn map=buffer30m@PERMANENT columns="b30m2 double"
+v.to.db map=buffer30m@PERMANENT option=area columns=b30m2 --overwrite
+
+v.db.addcolumn map=buffer100m@PERMANENT columns="b100m2 double"
+v.to.db map=buffer100m@PERMANENT option=area columns=b100m2 --overwrite
+
+# Unir capas de buffers con IDs # Este procedimiento es muy largo, por lo que puede tomar 3 horas
+v.overlay ainput=buffer30m@PERMANENT binput=buffer100m@PERMANENT operator=or output=rio30100 --overwrite
+v.db.addcolumn map=rio30100@PERMANENT columns="bufm2 double"
+v.to.db map=rio30100@PERMANENT option=area columns=bufm2 --overwrite
+
+
+# Intersectar bosques con los buffer. 3h uno approx  **FALTA**
+v.overlay ainput=rio30100@PERMANENT binput=anpbufbosdef@PERMANENT operator=and output=anpbufidbosdef
+v.db.addcolumn map=anpbufidbosdef@PERMANENT columns="bosbufidm2 double"
+v.to.db map=anpbufidbosdef@PERMANENT option=area columns=bosbufidm2 --overwrite
+
+
+
+## Exportar las tablas de las capas
+v.out.ogr input=anpbufidbosdef@PERMANENT output=C:\temp\Peru_riparios\04_calculoANP\anpbufidbosdef.csv format=CSV

@@ -1,5 +1,5 @@
 ## Cargar librería ---
-
+library(sf) # Raster
 library(raster) # Raster
 library(rgdal)  # Funciones de GDAL / OGR para R
 library(foreign) # Cargar las tablas .dbf de shapefiles
@@ -7,14 +7,14 @@ library(gdalUtilities) # Conexion a suit GDAL/OGR para ejecutar externo
 
 
 ## Definir Ruta de trabajo ----
-root <- 'C:/temp//Peru_riparios/04_calculoNacional/' # Usar / o \\. Cada uno cambia su ruta
+root <- 'F:/ods15/riparios/04_calculoANP' # Usar / o \\
 setwd( root ) # asignar ruta de trabajo
 
 # Asegurarnos que estamos en la carpeta de trabajo
 list.dirs(path = '.', full.names = TRUE, recursive = FALSE)
 
 ## Crear carpeta con resultados de cuencas
-outDir <- c('07_cortes_cuencas_1268')
+outDir <- c('07_ANP_359')
 dir.create(outDir, recursive = TRUE) # Algunos warnings. No es grave
 
 
@@ -32,7 +32,7 @@ archivo_raster_buffer_100 <- paste0('05_rios-raster/', 'buffer100.tif')
 
 ## Cargar cuenca -----
 ## Ajustar ruta total o relativa
-Ruta_cuencas <- '../01_DatosOriginales/Nacional/Bas_PE_1268.shp'
+Ruta_cuencas <- '../08_SERNANP/anp_proj.shp'
 file.exists( Ruta_cuencas ) # Debe resultar en TRUE
 
 ## Cargar cuencas en R como objeto espacial
@@ -42,22 +42,26 @@ cuencasCompletas@proj4string@projargs
 head(cuencasCompletas@data, 10) # Revisar tabla de atributos
 tail(cuencasCompletas@data, 10) # Revisar tabla de atributos 
 
-#plot(cuencasCompletas, axes = TRUE, main = 'Cuencas') # Graficar sencillo la capa
+# plot(cuencasCompletas, axes = TRUE, main = 'Cuencas') # Graficar sencillo la capa
 
 length(cuencasCompletas$OBJECTID) # Validar cantidad de objetos
 nrow(cuencasCompletas) # Validar cantidad de objetos
 length( unique(cuencasCompletas$OBJECTID) ) # Validar número de valores únicos en campo ID
-
+if( length( unique(cuencasCompletas$OBJECTID) ) == 0){
+  cuencasCompletas$OBJECTID <- 1:nrow(cuencasCompletas) # creamos un ID consecutivo
+  ## Escribir la tabla con el ID
+  write.dbf(cuencasCompletas@data, file = '../08_SERNANP/anp_proj.dbf')
+}
 
 ## Iteramos sobre todas las cuencas
 cuencas <- cuencasCompletas
-#plot(cuencas, add = TRUE)
+# plot(cuencas, add = TRUE)
 
 
 borrar_capas_raster <- TRUE
 
-for (i in sample(1:nrow(cuencas))){ # } # i = 1
-  # i = which(cuencas$OBJECTID == 1)
+for (i in (1:nrow(cuencas))){ # } # i = 95
+  # i = which(cuencas$OBJECTID == 17)
   
   (id_cuenca <- cuencas$OBJECTID[i])
   print( paste0(' --- Cuenca ', i, '-', nrow(cuencas),  '  ID: ', id_cuenca))
@@ -71,7 +75,7 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
   
   
   ## Iterar para cada cuenca con las capas de bosque disponible
-  for ( l  in 1:length(archivos_riparios)){ # l = 2
+  for ( l  in 1:length(archivos_riparios)){ # l = 1
     (archivo_ripario <- archivos_riparios[l])
     (anio <- gsub('.tif|bosq.+m_', '', basename(archivo_ripario)))
     (buffer <- gsub('m_.+|bos.+rio', '', basename(archivo_ripario)))
@@ -82,14 +86,14 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
     
     ## Seleccionar buffer a cortar dependiendo del buffer del bosque
     capa_buff_nacional <- ifelse(buffer == 30,
-                                   archivo_raster_buffer_30,
-                                   archivo_raster_buffer_100)
+                                 archivo_raster_buffer_30,
+                                 archivo_raster_buffer_100)
     
     archivo_corte_cuenca <- paste0(outDir, '/cuenca', 
                                    id_cuenca, '_buff', buffer,'_', anio, '.tif' )
     archivo_cifras_cuenca <- paste0(outDir, '/cuenca', 
                                     id_cuenca, '_buff', buffer,'_', anio, '.csv' )
-      
+    
     
     ## Ejecutar si no existen las capas o archivos de estadisticas
     if( ! file.exists(archivo_corte_cuenca) & !file.exists(archivo_cifras_cuenca) ){
@@ -102,11 +106,16 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
                                   dstfile = archivo_corte_cuenca_zona_rip,
                                   cutline = Ruta_cuencas,
                                   cwhere = paste('"OBJECTID"=', id_cuenca),
-                                  dstnodata = 999,
+                                  #srcnodata = 0,
+                                  srcnodata = 'None',
+                                  #dstnodata = 999,
                                   crop_to_cutline = TRUE,
+                                  nomd = TRUE,
                                   overwrite = TRUE,
                                   co = c("NBITS=1", "COMPRESS=DEFLATE")),
           error = function(e) NULL)
+        # rt = raster(corte_rip_cuenca); plot(rt, axes = TRUE); summary(rt)
+        
         if( is.null ( corte_rip_cuenca ) ){
           print( paste0(' Sin datos para la cuenca con ID OBJECTID:', id_cuenca, 
                         ' - capa:', archivo_ripario))
@@ -119,14 +128,18 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
       if(! file.exists(archivo_corte_cuenca) ){
         corte_bos_rip <- tryCatch(
           gdalUtilities::gdalwarp(srcfile = archivo_ripario,
-                                                 dstfile = archivo_corte_cuenca,
-                                                 cutline = Ruta_cuencas,
-                                                 cwhere = paste('"OBJECTID"=', id_cuenca),
-                                                 dstnodata = 999,
-                                                 crop_to_cutline = TRUE,
-                                                 co = c("NBITS=1", "COMPRESS=DEFLATE"),
-                                                 overwrite = TRUE),
+                                  dstfile = archivo_corte_cuenca,
+                                  cutline = Ruta_cuencas,
+                                  cwhere = paste('"OBJECTID"=', id_cuenca),
+                                  #dstnodata = 999,
+                                  srcnodata = 'None',
+                                  nomd = TRUE,
+                                  crop_to_cutline = TRUE,
+                                  co = c("NBITS=1", "COMPRESS=DEFLATE"),
+                                  overwrite = TRUE),
           error = function(e) NULL)
+        # rt2 = raster(archivo_corte_cuenca, legend = TRUE, main =  Sys.time()); plot(rt2, axes = TRUE); summary(rt2)
+        # (estadisticas_bosrip <- capture.output(gdalUtilities::gdalinfo(archivo_corte_cuenca, stats = TRUE, hist = TRUE) ))
         
         if( is.null ( corte_bos_rip )){
           print( paste0(' Sin datos para la cuenca con ID OBJECTID:', id_cuenca, 
@@ -136,7 +149,7 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
       }
     }
     
- 
+    
     
     
     
@@ -146,7 +159,7 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
       ## Estadistica zona riparia total -----
       estadisticas_cuenca <- capture.output(
         gdalUtilities::gdalinfo(archivo_corte_cuenca_zona_rip, 
-                                stats = TRUE) )
+                                stats = TRUE, hist = TRUE) )
       
       dimensiones_cuenca <- as.numeric(
         strsplit(gsub('[[:alpha:]]| ','', 
@@ -161,10 +174,12 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
       
       (pixeles_riparias_cuenca <- celdas_cuenca * promedio_cuenca)
       
-      ## Estadistica zona riparia con bosque -----
+      
+      ## Estadistica zona riparia con bosque ------------
+      
       estadisticas_bosrip <- capture.output(
         gdalUtilities::gdalinfo(archivo_corte_cuenca, 
-                                stats = TRUE) )
+                                stats = TRUE, hist = TRUE) )
       
       dimensiones_bosrip <- as.numeric(
         strsplit(gsub('[[:alpha:]]| ','', 
@@ -216,7 +231,7 @@ for (i in sample(1:nrow(cuencas))){ # } # i = 1
 
 
 
-#### Comppilar resultados ------
+#### Compilar resultados ------
 
 archivos_cifras <- list.files(pattern = 'cuenca.+[0-9].csv$',
                               path = outDir, 
@@ -249,10 +264,10 @@ if(nrow(filas_incorr) != 0){
 
 print(getwd())
 write.csv(x = resultados_cuencas , 
-          file = paste0('Compilado_indicadores_cuencas_1268pols_', Sys.Date(), '.csv'), 
+          file = paste0('Compilado_indicadores_ANP_359pols_', Sys.Date(), '.csv'), 
           row.names = FALSE)
 write.csv2(x = resultados_cuencas , 
-           file = paste0('Compilado2_indicadores_cuencas_1268pols_', Sys.Date(), '.csv'), 
+           file = paste0('Compilado2_indicadores_ANP_359pols_', Sys.Date(), '.csv'), 
            row.names = FALSE)
 
 
@@ -274,10 +289,10 @@ nrow(pivotTable100)
 nrow(pivotTable30)
 
 write.csv2(x = pivotTable30 , 
-           file = paste0('Compilado2_indicadores_cuencas_1268pols_', Sys.Date(), '_buffer30m.csv'), 
+           file = paste0('Compilado2_indicadores_ANP_359pols_', Sys.Date(), '_buffer30m.csv'), 
            row.names = FALSE)
 write.csv2(x = pivotTable100 , 
-           file = paste0('Compilado2_indicadores_cuencas_1268pols_', Sys.Date(), '_buffer100m.csv'), 
+           file = paste0('Compilado2_indicadores_ANP_359pols_', Sys.Date(), '_buffer100m.csv'), 
            row.names = FALSE)
 
 
@@ -292,6 +307,6 @@ cuencas@data[which(!is.na(posicion_merge100)), colnames(pivotTable100)] <-
   pivotTable100[na.omit(posicion_merge100), colnames(pivotTable100)]
 
 head(cuencas)
-writeOGR(obj = cuencas, dsn = '.', 
+writeOGR(obj = cuencas, dsn = '.', overwrite_layer = TRUE,
          driver = 'ESRI Shapefile', 
-         layer = paste0('Indicador_ripario_cuencas_1268pols_', Sys.Date()))
+         layer = paste0('Indicador_ripario_ANP_359pols_', Sys.Date()))

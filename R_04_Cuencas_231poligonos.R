@@ -84,14 +84,14 @@ for (i in (1:nrow(cuencas))){ # } # i = 1
     
     ## Seleccionar buffer a cortar dependiendo del buffer del bosque
     capa_buff_nacional <- ifelse(buffer == 30,
-                                   archivo_raster_buffer_30,
-                                   archivo_raster_buffer_100)
+                                 archivo_raster_buffer_30,
+                                 archivo_raster_buffer_100)
     
     archivo_corte_cuenca <- paste0(outDir, '/cuenca', 
                                    id_cuenca, '_buff', buffer,'_', anio, '.tif' )
     archivo_cifras_cuenca <- paste0(outDir, '/cuenca', 
                                     id_cuenca, '_buff', buffer,'_', anio, '.csv' )
-      
+    
     
     ## Ejecutar si no existen las capas o archivos de estadisticas
     if( ! file.exists(archivo_corte_cuenca) & !file.exists(archivo_cifras_cuenca) ){
@@ -121,13 +121,13 @@ for (i in (1:nrow(cuencas))){ # } # i = 1
       if(! file.exists(archivo_corte_cuenca) ){
         corte_bos_rip <- tryCatch(
           gdalUtilities::gdalwarp(srcfile = archivo_ripario,
-                                                 dstfile = archivo_corte_cuenca,
-                                                 cutline = Ruta_cuencas,
-                                                 cwhere = paste('"OBJECTID"=', id_cuenca),
-                                                 dstnodata = 999,
-                                                 crop_to_cutline = TRUE,
-                                                 co = c("NBITS=1", "COMPRESS=DEFLATE"),
-                                                 overwrite = TRUE),
+                                  dstfile = archivo_corte_cuenca,
+                                  cutline = Ruta_cuencas,
+                                  cwhere = paste('"OBJECTID"=', id_cuenca),
+                                  dstnodata = 999,
+                                  crop_to_cutline = TRUE,
+                                  co = c("NBITS=1", "COMPRESS=DEFLATE"),
+                                  overwrite = TRUE),
           error = function(e) NULL)
         
         if( is.null ( corte_bos_rip )){
@@ -138,7 +138,7 @@ for (i in (1:nrow(cuencas))){ # } # i = 1
       }
     }
     
- 
+    
     
     
     
@@ -256,8 +256,8 @@ write.csv(x = resultados_cuencas ,
           file = paste0('Compilado_indicadores_cuencas_231pols_', Sys.Date(), '.csv'), 
           row.names = FALSE)
 write.csv2(x = resultados_cuencas , 
-          file = paste0('Compilado2_indicadores_cuencas_231pols_', Sys.Date(), '.csv'), 
-          row.names = FALSE)
+           file = paste0('Compilado2_indicadores_cuencas_231pols_', Sys.Date(), '.csv'), 
+           row.names = FALSE)
 
 
 pivotTable30 <- as.data.frame.matrix(
@@ -278,8 +278,8 @@ nrow(pivotTable100)
 nrow(pivotTable30)
 
 write.csv2(x = pivotTable30 , 
-          file = paste0('Compilado2_indicadores_cuencas_231pols_', Sys.Date(), '_buffer30m.csv'), 
-          row.names = FALSE)
+           file = paste0('Compilado2_indicadores_cuencas_231pols_', Sys.Date(), '_buffer30m.csv'), 
+           row.names = FALSE)
 write.csv2(x = pivotTable100 , 
            file = paste0('Compilado2_indicadores_cuencas_231pols_', Sys.Date(), '_buffer100m.csv'), 
            row.names = FALSE)
